@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import base64
 import json
 from dataclasses import dataclass
@@ -38,8 +39,9 @@ MAP_ZOOM = 7
 GRID_ORIGIN = "north_up"
 
 INCLUDE_AURORA = True
+AURORA_JSON = Path("AURORA_SIMULATED.json")
 AURORA_URL = "https://services.swpc.noaa.gov/json/ovation_aurora_latest.json"
-AURORA_NAME = "NOAA aurora probability"
+AURORA_NAME = "Simulated aurora probability"
 AURORA_MIN = 0.0
 AURORA_MAX = 100.0
 
@@ -66,10 +68,7 @@ def orient_grid(grid: np.ndarray, origin: str) -> np.ndarray:
     return np.flipud(grid) if origin == "south_up" else grid
 
 
-def load_aurora_overlay(url: str) -> tuple[dict, np.ndarray]:
-    response = requests.get(url, timeout=30)
-    response.raise_for_status()
-    payload = response.json()
+def _build_aurora_grid(payload: dict) -> tuple[dict, np.ndarray]:
     coords = payload.get("coordinates")
     if not coords:
         raise ValueError("Aurora response missing 'coordinates' entries.")
@@ -86,11 +85,23 @@ def load_aurora_overlay(url: str) -> tuple[dict, np.ndarray]:
 
     bbox = [float(lons.min()), float(lats.min()), float(lons.max()), float(lats.max())]
     aurora_payload = {
-        "bbox": bbox,
+        "bbox": payload.get("bbox", bbox),
         "observation_time": payload.get("Observation Time"),
         "forecast_time": payload.get("Forecast Time"),
     }
     return aurora_payload, grid
+
+
+def load_aurora_overlay(use_real: bool) -> tuple[dict, np.ndarray]:
+    if use_real:
+        response = requests.get(AURORA_URL, timeout=30)
+        response.raise_for_status()
+        payload = response.json()
+    else:
+        if not AURORA_JSON.exists():
+            raise FileNotFoundError(f"Aurora file '{AURORA_JSON}' not found.")
+        payload = json.loads(AURORA_JSON.read_text(encoding="utf-8"))
+    return _build_aurora_grid(payload)
 
 
 def highlight_compress(
@@ -272,7 +283,19 @@ def create_map(overlays: Sequence[OverlaySpec], zoom: int, output_path: Path) ->
     print(f"Saved {output_path}")
 
 
-def main() -> None:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Build cloud/urban/aurora overlay map.")
+    parser.add_argument(
+        "--real",
+        action="store_true",
+        help="Use live NOAA aurora probabilities instead of simulated data.",
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: Sequence[str] | None = None) -> None:
+    args = parse_args(argv)
+
     cloud_payload, cloud_grid = load_grid(CLOUD_JSON, CLOUD_BAND_KEY)
     cloud_grid = orient_grid(cloud_grid, GRID_ORIGIN)
 
@@ -326,17 +349,18 @@ def main() -> None:
                 max_value=URBAN_MAX,
                 colors=URBAN_COLORS,
             )
-        )
+    )
 
     if INCLUDE_AURORA:
         try:
-            aurora_payload, aurora_grid = load_aurora_overlay(AURORA_URL)
+            aurora_payload, aurora_grid = load_aurora_overlay(args.real)
         except Exception as exc:  # noqa: BLE001 - surface network/fetch issues
             print(f"Failed to load aurora overlay: {exc}")
         else:
+            name = AURORA_NAME if not args.real else "NOAA aurora probability"
             overlays.append(
                 OverlaySpec(
-                    name=AURORA_NAME,
+                    name=name,
                     bbox=aurora_payload["bbox"],
                     grid=np.flipud(aurora_grid),
                     min_value=AURORA_MIN,

@@ -89,7 +89,14 @@ function setup() {
   };
 }
 
-var viz = ColorRampVisualizer.createBlueRed(minVal, maxVal);
+var viz = new ColorRampVisualizer([
+  [0.0,  [0, 0, 128]],    // deep blue
+  [0.25, [0, 64, 255]],   // blue
+  [0.5,  [0, 255, 255]],  // cyan
+  [0.75, [255, 255, 0]],  // yellow
+  [1.0,  [255, 0, 0]]     // red
+], minVal, maxVal);
+
 
 function evaluatePixel(samples) {
   const [r, g, b] = viz.process(samples.CLOUD_OPTICAL_THICKNESS);
@@ -108,8 +115,8 @@ DATA_SOURCE = [{
     "type": "sentinel-5p-l2",
     "dataFilter": {
         "timeRange": {
-            "from": "2025-09-15T00:00:00Z",
-            "to": "2025-09-15T23:59:59Z"
+            "from": "2025-11-02T00:00:00Z",
+            "to": "2025-11-02T23:59:59Z"
         }
     }
 }]
